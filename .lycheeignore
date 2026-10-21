@@ -1,0 +1,22 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# URLs the link checker skips.
+#
+# These are dynamic image generators. They render on GitHub correctly but are
+# rate-limited or slow for automated checkers, which would cause false alarms.
+# Real destination links (portfolio sites, Upwork, GitHub) are still checked.
+# One regular expression per line.
+# ──────────────────────────────────────────────────────────────────────────────
+^https://capsule-render\.vercel\.app/
+^https://readme-typing-svg\.demolab\.com/
+^https://komarev\.com/ghpvc/
+^https://github-readme-stats\.vercel\.app/
+^https://github-readme-activity-graph\.vercel\.app/
+^https://streak-stats\.demolab\.com
+^https://skillicons\.dev/
+^https://img\.shields\.io/
+
+# The snake SVGs only exist after the first snake.yml run.
+^https://raw\.githubusercontent\.com/emperor1234/emperor1234/output/
+
+# Upwork blocks automated requests (returns 403 to bots).
+^https://www\.upwork\.com/

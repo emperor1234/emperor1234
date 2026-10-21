@@ -1,0 +1,100 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# Workflow: README link check
+#
+# Purpose
+#   A profile README is a public resume. A dead portfolio link or a broken
+#   stats card looks careless to a recruiter or client, so this job checks
+#   every link and image URL in README.md once a week and on every change.
+#
+# Behaviour
+#   • Uses lychee, a fast Rust link checker with retry and caching support.
+#   • Dynamic image services (stats cards, typing SVG, view counter) are
+#     rate-limited and occasionally slow, so they are excluded via
+#     .lycheeignore to avoid false alarms. Real destination links are checked.
+#   • On a scheduled run that finds broken links, an issue is opened (or the
+#     existing one updated) so you get a GitHub notification instead of a
+#     silent red badge.
+#
+# Requirements
+#   Settings → Actions → General → Workflow permissions → "Read and write"
+#   (needed only for opening the issue).
+# ──────────────────────────────────────────────────────────────────────────────
+name: README link check
+
+on:
+  schedule:
+    - cron: "0 6 * * 1" # Mondays 06:00 UTC
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "README.md"
+      - ".lycheeignore"
+      - ".github/workflows/link-check.yml"
+  pull_request:
+    paths:
+      - "README.md"
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: link-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lychee:
+    name: Check links in README.md
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Restore lychee cache
+        uses: actions/cache@v4
+        with:
+          path: .lycheecache
+          key: lychee-${{ github.sha }}
+          restore-keys: lychee-
+
+      - name: Run lychee
+        id: lychee
+        uses: lycheeverse/lychee-action@v2
+        with:
+          args: >-
+            --cache
+            --max-cache-age 1d
+            --max-retries 3
+            --retry-wait-time 5
+            --timeout 20
+            --accept 200,206,429
+            --no-progress
+            README.md
+          output: ./lychee-report.md
+          fail: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish report to the job summary
+        if: always()
+        run: |
+          if [ -f lychee-report.md ]; then
+            cat lychee-report.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Open or update an issue for broken links (scheduled runs only)
+        if: steps.lychee.outputs.exit_code != 0 && github.event_name == 'schedule'
+        uses: peter-evans/create-issue-from-file@v5
+        with:
+          title: "Broken links detected in profile README"
+          content-filepath: ./lychee-report.md
+          labels: broken-links, automated
+
+      - name: Fail the check on push or pull request when links are broken
+        if: steps.lychee.outputs.exit_code != 0 && github.event_name != 'schedule'
+        run: |
+          echo "::error::Broken links found. See the job summary for details."
+          exit 1

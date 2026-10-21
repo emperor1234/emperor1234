@@ -1,0 +1,77 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# Workflow: Generate contribution snake
+#
+# Purpose
+#   Renders the "snake eating my contribution graph" animation shown in the
+#   GitHub Analytics section of README.md, in both light and dark palettes.
+#
+# How it works
+#   1. Platane/snk reads the public contribution calendar of the repo owner.
+#   2. It writes two SVGs into ./dist.
+#   3. The SVGs are force-pushed to the orphan `output` branch, which README.md
+#      references via raw.githubusercontent.com. Keeping them off `main` means
+#      the daily refresh never pollutes your commit history.
+#
+# Triggers
+#   • Daily at 00:00 UTC (the contribution graph changes at most once a day).
+#   • Manually from the Actions tab (workflow_dispatch).
+#   • On push to main when this file changes, so the first render happens as
+#     soon as you commit it.
+#
+# Requirements
+#   Settings → Actions → General → Workflow permissions → "Read and write".
+# ──────────────────────────────────────────────────────────────────────────────
+name: Generate contribution snake
+
+on:
+  schedule:
+    - cron: "0 0 * * *"
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/snake.yml"
+
+permissions:
+  contents: write
+
+# Never let two runs race to force-push the output branch.
+concurrency:
+  group: contribution-snake
+  cancel-in-progress: true
+
+jobs:
+  generate:
+    name: Render and publish snake SVGs
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Generate snake SVGs (light + dark)
+        uses: Platane/snk/svg-only@v3
+        with:
+          github_user_name: ${{ github.repository_owner }}
+          outputs: |
+            dist/github-snake.svg
+            dist/github-snake-dark.svg?palette=github-dark
+
+      - name: Verify both files were produced
+        run: |
+          set -euo pipefail
+          for file in dist/github-snake.svg dist/github-snake-dark.svg; do
+            if [ ! -s "$file" ]; then
+              echo "::error::Expected $file to exist and be non-empty"
+              exit 1
+            fi
+          done
+          ls -la dist
+
+      - name: Publish to the output branch
+        uses: crazy-max/ghaction-github-pages@v4
+        with:
+          target_branch: output
+          build_dir: dist
+          keep_history: false
+          commit_message: "chore(snake): refresh contribution animation [skip ci]"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
